@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import "./App.css";
 
 interface TypePausa {
-  id: number;
+  id: string;
   name: string;
 }
 
@@ -66,15 +66,15 @@ export interface InfoAdicional {
 
 function App() {
   const typePausas: TypePausa[] = [
-    { id: 1204, name: "Banheiro" },
-    { id: 1023, name: "Backlog" },
-    { id: 0, name: "Remover pausa" },
+    { id: '1204', name: "Banheiro" },
+    { id: '3161', name: "Backlog" },
+    { id: '0', name: "Remover pausa" },
   ];
 
   const [callStack, setCallStack] = useState<CallStackPausa[]>([]);
 
   const [isAdding, setIsAdding] = useState(false);
-  const [selectedPausaId, setSelectedPausaId] = useState<number | "">("");
+  const [selectedPausaId, setSelectedPausaId] = useState<number | string>("");
   const [pausaTime, setPausaTime] = useState("");
   const [pausaMinutes, setPausaMinutes] = useState("");
   const [pausaAgent, setPausaAgent] = useState("");
@@ -98,8 +98,7 @@ function App() {
   function addToCallStack() {
     if (selectedPausaId === "") return;
 
-    const selectedId = Number(selectedPausaId);
-    const selectedPausa = typePausas.find((pausa) => pausa.id === selectedId);
+    const selectedPausa = typePausas.find((pausa) => pausa.id === selectedPausaId);
 
     if (selectedPausa) {
       const newPausa: CallStackPausa = {
@@ -121,54 +120,119 @@ function App() {
     setCallStack((prev) => prev.filter((_, i) => i !== index));
   }
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await fetch(
-          "https://api-pabx.valenet.com.br:8443/v2/agents",
-          {
-            headers: {
-              "Api-Key": "UVYXcquaKGHTyuMPpegBD63FUyFx1esK",
-            },
-          }
-        );
+  // useEffect(() => {
+  //   const fetchData = async () => {
+  //     try {
+  //       const res = await fetch(
+  //         "https://api-pabx.valenet.com.br:8443/v2/agents",
+  //         {
+  //           headers: {
+  //             "Api-Key": "UVYXcquaKGHTyuMPpegBD63FUyFx1esK",
+  //           },
+  //         }
+  //       );
 
-        const data: Root[] = await res.json();
-        const filteredData = data.filter(
-          (item) =>
-            item.departamento === "Suporte 1º Nível" && item.inCall === true
-        );
+  //       const data: Root[] = await res.json();
+  //       const filteredData = data.filter(
+  //         (item) =>
+  //           item.departamento === "Suporte 1º Nível" && item.inCall === true
+  //       );
 
-        const filteredDataPausa = data.filter(
-          (item) =>
-            item.departamento === "Suporte 1º Nível" && item.paused === true
-        );
+  //       const filteredDataPausa = data.filter(
+  //         (item) =>
+  //           item.departamento === "Suporte 1º Nível" && item.paused === true
+  //       );
 
-        // const dataRecebida = new Date(ag.channel.meta.created);
+  //       // const dataRecebida = new Date(ag.channel.meta.created);
 
-        // const agora = new Date();
+  //       // const agora = new Date();
 
-        // const diferencaMs = agora - dataRecebida;
-        // const diferencaMinutos = Math.floor(diferencaMs / 1000 / 60);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      }
-    };
+  //       // const diferencaMs = agora - dataRecebida;
+  //       // const diferencaMinutos = Math.floor(diferencaMs / 1000 / 60);
+  //     } catch (error) {
+  //       console.error("Error fetching data:", error);
+  //     }
+  //   };
 
-    fetchData();
+  //   fetchData();
 
-    const intervalId = setInterval(fetchData, 1000);
+  //   const intervalId = setInterval(fetchData, 1000);
 
-    return () => {
-      clearInterval(intervalId);
-    };
-  }, []);
+  //   return () => {
+  //     clearInterval(intervalId);
+  //   };
+  // }, []);
 
   const showAdditionalInfo = selectedPausaId !== "" && selectedPausaId !== 0;
+
+  async function pausarBanheiro(id: string) {
+    // setPauseId(id); // Isso é opcional agora, já que vamos passar o id diretamente
+    chrome.tabs.query({ url: "https://helpdesk.valenet.local:8443/*" }, function (tabs) {
+      tabs.forEach(tab => {
+        // Executa a função applyPause em cada aba, passando o id como argumento
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id as number },
+          func: applyPause,
+          args: [id] // Passa o id diretamente para a função
+        });
+      });
+    });
+  }
+  
+  // Função que será injetada, agora aceitando o id como parâmetro
+  function applyPause(pauseId: string) {
+    function clickElement(selector: string): boolean {
+      const element = document.querySelector(selector);
+      if (element) {
+        (element as HTMLElement).click();
+        return true;
+      }
+      return false;
+    }
+  
+    function selectOption(): boolean {
+      const selectElement = document.querySelector('.bootbox-input-select');
+      if (selectElement) {
+        (selectElement as HTMLSelectElement).value = pauseId; // Usa o pauseId passado como argumento
+        const event = new Event('change', { bubbles: true });
+        selectElement.dispatchEvent(event);
+        return true;
+      }
+      return false;
+    }
+  
+    function confirmPause(): boolean {
+      const confirmButton = document.querySelector('button[data-bb-handler="confirm"]');
+      if (confirmButton) {
+        (confirmButton as HTMLElement).click();
+        return true;
+      }
+      return false;
+    }
+  
+    // Lógica de pausa
+    if (clickElement('a[href="#"][onclick*="TogglePausa"]')) {
+      setTimeout(() => {
+        if (selectOption()) {
+          setTimeout(() => {
+            confirmPause();
+          }, 500);
+        }
+      }, 500);
+    } else {
+      console.error('Botão de pausa não encontrado!');
+    }
+  }
 
   return (
     <div className="pausa-manager">
       <h1 className="title">Monte suas pausas na CallStack</h1>
+
+      {typePausas.map((item) => (
+      <button type="button" onClick={() => pausarBanheiro(item.id)} key={item.id}>
+        {item.name}
+      </button>
+    ))}
 
       <button
         className={`btn ${isAdding ? "btn-cancel" : "btn-add"}`}
