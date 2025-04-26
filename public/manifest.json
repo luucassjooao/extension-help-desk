@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Pause Helpdesk",
+  "version": "1.0",
+  "description": "Pausa o sistema de helpdesk ao pressionar Ctrl + M",
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": ["activeTab", "scripting", "webNavigation"],
+  "action": {
+    "default_popup": "index.html",
+    "default_title": "React Chrome Extension"
+  },
+  "host_permissions": ["https://helpdesk.valenet.local:8443/*"],
+  "commands": {
+    "pause-helpdesk": {
+      "suggested_key": {
+        "default": "Ctrl+M"
+      },
+      "description": "Pausa o sistema de helpdesk"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://helpdesk.valenet.local:8443/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ]
+}
