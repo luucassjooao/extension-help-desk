@@ -1,70 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
+import useScheduler from "./useScheduler";
+import { CallStackPausa, Root, TypeOfPause, TypePausa } from "./interfaces";
 
-interface TypePausa {
-  id: string;
-  name: string;
-}
-
-interface CallStackPausa extends TypePausa {
-  time: string | null;
-  putAfterXTime: number | null;
-  putAfterXAgent: string | null;
-  duration: number | null;
-}
-
-export interface Root {
-  agent: string;
-  agentNumber: string;
-  ramal: any;
-  status: string;
-  paused: boolean;
-  lastCall: any;
-  inCall: boolean;
-  location: any;
-  name: string;
-  departamento: string;
-  aPausaDescanso: any[];
-  bloqueado_pausa: boolean;
-  call: any;
-  inicio_pausa: any;
-  motivo_pausa: any;
-  pausaDescanso: boolean;
-  id_pausa: any;
-  tempo_ocioso: any;
-  horario_login: number;
-  isReturning: number;
-  host: any;
-  channel: any;
-  lastStateChange: number;
-  queues: Queue[];
-  meta: Meta;
-  $loki: number;
-  info_adicional: InfoAdicional;
-}
-
-export interface Queue {
-  name: string;
-  identifier: string;
-  penalty: string;
-}
-
-export interface Meta {
-  revision: number;
-  created: number;
-  version: number;
-  updated: number;
-}
-
-export interface InfoAdicional {
-  chamado: number;
-  agente: string;
-  tipo: string;
-  codcidade: string;
-  solicitacao: string;
-}
-
-function App() {
+export function App() {
   const typePausas: TypePausa[] = [
     { id: "1204", name: "Banheiro" },
     { id: "3161", name: "Backlog" },
@@ -75,10 +14,16 @@ function App() {
 
   const [isAdding, setIsAdding] = useState(false);
   const [selectedPausaId, setSelectedPausaId] = useState<number | string>("");
-  const [pausaTime, setPausaTime] = useState("");
-  const [pausaMinutes, setPausaMinutes] = useState("");
-  const [pausaAgent, setPausaAgent] = useState("");
+
   const [pausaDuration, setPausaDuration] = useState("");
+  const [valueTypePause, setValueTypePause] = useState("");
+  const [typePausePutAfterXAgent, setTypePausePutAfterXAgent] =
+    useState<boolean>(false);
+  const [typePause, setTypePause] = useState<TypeOfPause>(null);
+  const [isNextPauseIsAfterAgent, setIsNextPauseIsAfterAgent] =
+    useState<boolean>(false);
+
+  const { scheduleTask } = useScheduler();
 
   function toggleAddPausa() {
     setIsAdding(!isAdding);
@@ -89,9 +34,8 @@ function App() {
 
   function resetForm() {
     setSelectedPausaId("");
-    setPausaTime("");
-    setPausaMinutes("");
-    setPausaAgent("");
+    setTypePause(null);
+    setTypePausePutAfterXAgent(false);
     setPausaDuration("");
   }
 
@@ -99,20 +43,37 @@ function App() {
     if (selectedPausaId === "") return;
 
     const selectedPausa = typePausas.find(
-      (pausa) => pausa.id === selectedPausaId
+      (pausa) => pausa.id === String(selectedPausaId)
     );
 
     if (selectedPausa) {
       const newPausa: CallStackPausa = {
         id: selectedPausa.id,
         name: selectedPausa.name,
-        time: pausaTime || null,
-        putAfterXTime: pausaMinutes ? Number(pausaMinutes) : null,
-        putAfterXAgent: pausaAgent || null,
+        type: String(typePause),
+        value: valueTypePause,
         duration: pausaDuration ? Number(pausaDuration) : null,
       };
 
       setCallStack((prev) => [...prev, newPausa]);
+
+      if (newPausa.type === "time") {
+        scheduleTask(newPausa.value as string, {
+          idPause: newPausa.id,
+          setState: setCallStack,
+          duration: {
+            isDuration: false,
+            has: pausaDuration ? true : false,
+            time: pausaDuration ? pausaDuration : null,
+          },
+        });
+      }
+      if (newPausa.type === "putAfterXAgent") {
+        if (callStack.length === 0) {
+          setIsNextPauseIsAfterAgent(true);
+        }
+      }
+
       resetForm();
       setIsAdding(false);
     }
@@ -122,128 +83,133 @@ function App() {
     setCallStack((prev) => prev.filter((_, i) => i !== index));
   }
 
-  // useEffect(() => {
-  //   const fetchData = async () => {
-  //     try {
-  //       const res = await fetch(
-  //         "https://api-pabx.valenet.com.br:8443/v2/agents",
-  //         {
-  //           headers: {
-  //             "Api-Key": "UVYXcquaKGHTyuMPpegBD63FUyFx1esK",
-  //           },
-  //         }
-  //       );
+  function handlerChangeValue(value: string, type: TypeOfPause) {
+    setValueTypePause(value);
+    setTypePause(type);
 
-  //       const data: Root[] = await res.json();
-  //       const filteredData = data.filter(
-  //         (item) =>
-  //           item.departamento === "Suporte 1º Nível" && item.inCall === true
-  //       );
+    if (type === "putAfterXAgent") {
+      setTypePausePutAfterXAgent(true);
+    }
+  }
 
-  //       const filteredDataPausa = data.filter(
-  //         (item) =>
-  //           item.departamento === "Suporte 1º Nível" && item.paused === true
-  //       );
+  useEffect(() => {
+    if (callStack[0].type === "putAfterXAgent") {
+      setIsNextPauseIsAfterAgent(true);
+    } else {
+      setIsNextPauseIsAfterAgent(false);
+    }
+  }, [callStack]);
 
-  //       // const dataRecebida = new Date(ag.channel.meta.created);
+  useEffect(() => {
+    if (!isNextPauseIsAfterAgent) return;
 
-  //       // const agora = new Date();
+    const fetchData = async () => {
+      try {
+        const res = await fetch(
+          // api para o agente em especifico
+          "https://api-pabx.valenet.com.br:8443/v2/agents",
+          {
+            headers: {
+              "Api-Key": "UVYXcquaKGHTyuMPpegBD63FUyFx1esK",
+            },
+          }
+        );
 
-  //       // const diferencaMs = agora - dataRecebida;
-  //       // const diferencaMinutos = Math.floor(diferencaMs / 1000 / 60);
-  //     } catch (error) {
-  //       console.error("Error fetching data:", error);
+        const data: Root[] = await res.json();
+        // const filteredData = data.filter(
+        //   (item) =>
+        //     item.departamento === "Suporte 1º Nível"
+        // );
+
+        // const findAgent = filteredData.find((agent) => agent.name === callStack[0].value)
+
+        // buscar na api do pabx, o agnte em especifico, ver qual o status dele, se ele já foi de pausa
+
+        // if (findAgent?.paused)
+
+        // const dataRecebida = new Date(ag.channel.meta.created);
+        // const agora = new Date();
+        // const diferencaMs = agora - dataRecebida;
+        // const diferencaMinutos = Math.floor(diferencaMs / 1000 / 60);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+      }
+    };
+
+    fetchData();
+
+    const intervalId = setInterval(fetchData, 1000);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [isNextPauseIsAfterAgent]);
+
+  // async function pausarBanheiro(id: string) {
+  //   // setPauseId(id); // Isso é opcional agora, já que vamos passar o id diretamente
+  //   chrome.tabs.query({ url: "https://helpdesk.valenet.local:8443/*" }, function (tabs) {
+  //     tabs.forEach(tab => {
+  //       // Executa a função applyPause em cada aba, passando o id como argumento
+  //       chrome.scripting.executeScript({
+  //         target: { tabId: tab.id as number },
+  //         func: applyPause,
+  //         args: [id] // Passa o id diretamente para a função
+  //       });
+  //     });
+  //   });
+  // }
+
+  // // Função que será injetada, agora aceitando o id como parâmetro
+  // function applyPause(pauseId: string) {
+  //   function clickElement(selector: string): boolean {
+  //     const element = document.querySelector(selector);
+  //     if (element) {
+  //       (element as HTMLElement).click();
+  //       return true;
   //     }
-  //   };
+  //     return false;
+  //   }
 
-  //   fetchData();
+  //   function selectOption(): boolean {
+  //     const selectElement = document.querySelector('.bootbox-input-select');
+  //     if (selectElement) {
+  //       (selectElement as HTMLSelectElement).value = pauseId; // Usa o pauseId passado como argumento
+  //       const event = new Event('change', { bubbles: true });
+  //       selectElement.dispatchEvent(event);
+  //       return true;
+  //     }
+  //     return false;
+  //   }
 
-  //   const intervalId = setInterval(fetchData, 1000);
+  //   function confirmPause(): boolean {
+  //     const confirmButton = document.querySelector('button[data-bb-handler="confirm"]');
+  //     if (confirmButton) {
+  //       (confirmButton as HTMLElement).click();
+  //       return true;
+  //     }
+  //     return false;
+  //   }
 
-  //   return () => {
-  //     clearInterval(intervalId);
-  //   };
-  // }, []);
+  //   // Lógica de pausa
+  //   if (clickElement('a[href="#"][onclick*="TogglePausa"]')) {
+  //     setTimeout(() => {
+  //       if (selectOption()) {
+  //         setTimeout(() => {
+  //           confirmPause();
+  //         }, 500);
+  //       }
+  //     }, 500);
+  //   } else {
+  //     console.error('Botão de pausa não encontrado!');
+  //   }
+  // }
 
   const showAdditionalInfo = selectedPausaId !== "" && selectedPausaId !== 0;
-
-  async function pausarBanheiro(id: string) {
-    // setPauseId(id); // Isso é opcional agora, já que vamos passar o id diretamente
-    chrome.tabs.query(
-      { url: "https://helpdesk.valenet.local:8443/*" },
-      function (tabs) {
-        tabs.forEach((tab) => {
-          // Executa a função applyPause em cada aba, passando o id como argumento
-          chrome.scripting.executeScript({
-            target: { tabId: tab.id as number },
-            func: applyPause,
-            args: [id], // Passa o id diretamente para a função
-          });
-        });
-      }
-    );
-  }
-
-  // Função que será injetada, agora aceitando o id como parâmetro
-  function applyPause(pauseId: string) {
-    function clickElement(selector: string): boolean {
-      const element = document.querySelector(selector);
-      if (element) {
-        (element as HTMLElement).click();
-        return true;
-      }
-      return false;
-    }
-
-    function selectOption(): boolean {
-      const selectElement = document.querySelector(".bootbox-input-select");
-      if (selectElement) {
-        (selectElement as HTMLSelectElement).value = pauseId; // Usa o pauseId passado como argumento
-        const event = new Event("change", { bubbles: true });
-        selectElement.dispatchEvent(event);
-        return true;
-      }
-      return false;
-    }
-
-    function confirmPause(): boolean {
-      const confirmButton = document.querySelector(
-        'button[data-bb-handler="confirm"]'
-      );
-      if (confirmButton) {
-        (confirmButton as HTMLElement).click();
-        return true;
-      }
-      return false;
-    }
-
-    // Lógica de pausa
-    if (clickElement('a[href="#"][onclick*="TogglePausa"]')) {
-      setTimeout(() => {
-        if (selectOption()) {
-          setTimeout(() => {
-            confirmPause();
-          }, 500);
-        }
-      }, 500);
-    } else {
-      console.error("Botão de pausa não encontrado!");
-    }
-  }
+  const disabledButtonAddPause = typePause || valueTypePause;
 
   return (
     <div className="pausa-manager">
       <h1 className="title">Monte suas pausas na CallStack</h1>
-
-      {typePausas.map((item) => (
-        <button
-          type="button"
-          onClick={() => pausarBanheiro(item.id)}
-          key={item.id}
-        >
-          {item.name}
-        </button>
-      ))}
 
       <button
         className={`btn ${isAdding ? "btn-cancel" : "btn-add"}`}
@@ -275,8 +241,8 @@ function App() {
                 <input
                   type="time"
                   className="form-input"
-                  value={pausaTime}
-                  onChange={(e) => setPausaTime(e.target.value)}
+                  value={typePause === "time" ? valueTypePause : ""}
+                  onChange={(e) => handlerChangeValue(e.target.value, "time")}
                   placeholder="Horário"
                   title="Horário da pausa"
                 />
@@ -285,8 +251,10 @@ function App() {
                   type="number"
                   min="0"
                   className="form-input"
-                  value={pausaMinutes}
-                  onChange={(e) => setPausaMinutes(e.target.value)}
+                  value={typePause === "putAfterXTime" ? valueTypePause : ""}
+                  onChange={(e) =>
+                    handlerChangeValue(e.target.value, "putAfterXTime")
+                  }
                   placeholder="Após min"
                   title="Após quantos minutos"
                 />
@@ -294,8 +262,10 @@ function App() {
                 <input
                   type="text"
                   className="form-input"
-                  value={pausaAgent}
-                  onChange={(e) => setPausaAgent(e.target.value)}
+                  value={typePause === "putAfterXAgent" ? valueTypePause : ""}
+                  onChange={(e) =>
+                    handlerChangeValue(e.target.value, "putAfterXAgent")
+                  }
                   placeholder="Agente"
                   title="Após qual agente"
                 />
@@ -312,10 +282,22 @@ function App() {
               </>
             )}
 
+            {typePause && (
+              <small>
+                A pausa irá ser adicionada quando
+                {typePause === "time" && `der ${valueTypePause}`}
+                {typePause === "putAfterXAgent" &&
+                  `o ${valueTypePause}, tirar a pausa de ${typePausePutAfterXAgent}`}
+                {typePause === "putAfterXTime" &&
+                  `der ${valueTypePause} minutos de chamado`}
+                {" ,"}ou quando voce terminar a ligação
+              </small>
+            )}
+
             <button
               className="btn btn-save"
               onClick={addToCallStack}
-              disabled={selectedPausaId === ""}
+              disabled={!disabledButtonAddPause}
             >
               Adicionar
             </button>
@@ -333,20 +315,16 @@ function App() {
               <li key={index} className="stack-item">
                 <span className="pausa-name">{pausa.name}</span>
                 <div className="pausa-details">
-                  {pausa.time && (
-                    <span className="detail">Horário: {pausa.time}</span>
+                  {pausa.type === "time" && (
+                    <span className="detail">Horário: {pausa.value}</span>
                   )}
-                  {pausa.putAfterXTime && (
-                    <span className="detail">
-                      Após: {pausa.putAfterXTime}min
-                    </span>
+                  {pausa.type === "putAfterXTime" && (
+                    <span className="detail">Após: {pausa.value}min</span>
                   )}
-                  {pausa.putAfterXAgent && (
-                    <span className="detail">
-                      Agente: {pausa.putAfterXAgent}
-                    </span>
+                  {pausa.type === "putAfterXAgent" && (
+                    <span className="detail">Agente: {pausa.value}</span>
                   )}
-                  {pausa.duration && (
+                  {pausa.duration! > 0 && (
                     <span className="detail">Duração: {pausa.duration}min</span>
                   )}
                   <button
