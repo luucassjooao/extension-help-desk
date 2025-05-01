@@ -212,3 +212,7 @@ body {
     width: 100%;
   }
 }
+
+.vertical-hr {
+  height: 22px; /*Altura da linha*/
+}

@@ -1,5 +1,6 @@
 import { Dispatch, useEffect, useRef } from "react";
 import { CallStackPausa } from "./interfaces";
+import { calculateDelay } from "./funcs";
 
 interface IPropsExecuteTask {
   idPause: string;
@@ -13,20 +14,6 @@ interface IPropsExecuteTask {
 
 function useScheduler() {
   const timerRef = useRef<number | null>(null);
-
-  const calculateDelay = (timeString: string): number => {
-    const now = new Date();
-    const [hours, minutes] = timeString.split(":").map(Number);
-
-    const targetDate = new Date();
-    targetDate.setHours(hours, minutes, 0, 0);
-
-    if (targetDate <= now) {
-      targetDate.setDate(targetDate.getDate() + 1);
-    }
-
-    return targetDate.getTime() - now.getTime();
-  };
 
   function scheduleTask(
     targetTime: string,
@@ -44,7 +31,7 @@ function useScheduler() {
 
     timerRef.current = window.setTimeout(() => {
       executeTask({ idPause, setState, duration });
-    }, delay);
+    }, delay as number);
   }
 
   function executeTask({

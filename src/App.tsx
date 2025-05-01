@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import "./App.css";
 import useScheduler from "./useScheduler";
 import { CallStackPausa, Root, TypeOfPause, TypePausa } from "./interfaces";
+import { shouldDisableButton } from "./funcs";
 
 export function App() {
   const typePausas: TypePausa[] = [
@@ -93,7 +94,7 @@ export function App() {
   }
 
   useEffect(() => {
-    if (callStack[0].type === "putAfterXAgent") {
+    if (callStack[0]?.type === "putAfterXAgent") {
       setIsNextPauseIsAfterAgent(true);
     } else {
       setIsNextPauseIsAfterAgent(false);
@@ -115,22 +116,10 @@ export function App() {
           }
         );
 
-        const data: Root[] = await res.json();
-        // const filteredData = data.filter(
-        //   (item) =>
-        //     item.departamento === "Suporte 1º Nível"
-        // );
-
-        // const findAgent = filteredData.find((agent) => agent.name === callStack[0].value)
-
-        // buscar na api do pabx, o agnte em especifico, ver qual o status dele, se ele já foi de pausa
-
-        // if (findAgent?.paused)
-
-        // const dataRecebida = new Date(ag.channel.meta.created);
-        // const agora = new Date();
-        // const diferencaMs = agora - dataRecebida;
-        // const diferencaMinutos = Math.floor(diferencaMs / 1000 / 60);
+        const data: Root = await res.json();
+        if (!data.paused) {
+          // chamar api para pusar
+        }
       } catch (error) {
         console.error("Error fetching data:", error);
       }
@@ -205,7 +194,12 @@ export function App() {
   // }
 
   const showAdditionalInfo = selectedPausaId !== "" && selectedPausaId !== 0;
-  const disabledButtonAddPause = typePause || valueTypePause;
+
+  const currentTime = new Date().toTimeString().slice(0, 5);
+  const disabledButtonAddPause =
+    typePause === "time"
+      ? shouldDisableButton(pausaDuration, valueTypePause)
+      : shouldDisableButton(pausaDuration, currentTime);
 
   return (
     <div className="pausa-manager">
@@ -248,18 +242,6 @@ export function App() {
                 />
 
                 <input
-                  type="number"
-                  min="0"
-                  className="form-input"
-                  value={typePause === "putAfterXTime" ? valueTypePause : ""}
-                  onChange={(e) =>
-                    handlerChangeValue(e.target.value, "putAfterXTime")
-                  }
-                  placeholder="Após min"
-                  title="Após quantos minutos"
-                />
-
-                <input
                   type="text"
                   className="form-input"
                   value={typePause === "putAfterXAgent" ? valueTypePause : ""}
@@ -270,9 +252,9 @@ export function App() {
                   title="Após qual agente"
                 />
 
+                <hr className="vertical-hr" />
                 <input
-                  type="number"
-                  min="1"
+                  type="time"
                   className="form-input"
                   value={pausaDuration}
                   onChange={(e) => setPausaDuration(e.target.value)}
@@ -288,8 +270,6 @@ export function App() {
                 {typePause === "time" && `der ${valueTypePause}`}
                 {typePause === "putAfterXAgent" &&
                   `o ${valueTypePause}, tirar a pausa de ${typePausePutAfterXAgent}`}
-                {typePause === "putAfterXTime" &&
-                  `der ${valueTypePause} minutos de chamado`}
                 {" ,"}ou quando voce terminar a ligação
               </small>
             )}
