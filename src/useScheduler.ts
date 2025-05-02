@@ -1,9 +1,11 @@
 import { Dispatch, useEffect, useRef } from "react";
 import { CallStackPausa } from "./interfaces";
 import { calculateDelay } from "./funcs";
+import { handlerClickPause } from "./clickButton";
 
 interface IPropsExecuteTask {
   idPause: string;
+  targetTime: string;
   setState: Dispatch<React.SetStateAction<CallStackPausa[]>>;
   duration: {
     isDuration: boolean;
@@ -15,10 +17,12 @@ interface IPropsExecuteTask {
 function useScheduler() {
   const timerRef = useRef<number | null>(null);
 
-  function scheduleTask(
-    targetTime: string,
-    { idPause, setState, duration }: IPropsExecuteTask
-  ): void {
+  function scheduleTask({
+    idPause,
+    setState,
+    duration,
+    targetTime,
+  }: IPropsExecuteTask): void {
     if (!targetTime) {
       return;
     }
@@ -38,17 +42,19 @@ function useScheduler() {
     idPause,
     setState,
     duration,
-  }: IPropsExecuteTask): void {
+  }: Omit<IPropsExecuteTask, "targetTime">): void {
     if (duration.isDuration) {
       setState((prev) => prev.filter((item) => item.id !== idPause));
       return;
     }
 
     try {
-      // chamar a api para pausa
+      // chamar API para pausa
+      handlerClickPause(idPause);
 
       if (duration.has) {
-        scheduleTask(duration.time!, {
+        scheduleTask({
+          targetTime: duration.time!,
           idPause,
           setState,
           duration: { isDuration: true, has: false, time: "" },

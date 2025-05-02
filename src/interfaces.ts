@@ -1,12 +1,13 @@
 export interface TypePausa {
   id: string;
-  name: string;
+  name: "Backlog" | "Banheiro" | "Remover Pausa";
 }
 
 export interface CallStackPausa extends TypePausa {
-  type: string;
+  type: TypeOfPause;
   value: string | number | null;
-  duration: number | null;
+  duration: string | null;
+  typePausePutAfterXAgent: string;
 }
 
 export interface Root {

@@ -1,205 +1,216 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import useScheduler from "./useScheduler";
-import { CallStackPausa, Root, TypeOfPause, TypePausa } from "./interfaces";
+import { CallStackPausa, TypeOfPause, TypePausa } from "./interfaces";
 import { shouldDisableButton } from "./funcs";
+import { handlerClickPause } from "./clickButton";
 
 export function App() {
-  const typePausas: TypePausa[] = [
+  const PAUSE_TYPES: TypePausa[] = [
     { id: "1204", name: "Banheiro" },
     { id: "3161", name: "Backlog" },
-    { id: "0", name: "Remover pausa" },
+    { id: "1", name: "Remover Pausa" },
   ];
 
+  const API_BASE_URL = "https://api-pabx.valenet.com.br:8443/v2";
+  const API_KEY = "UVYXcquaKGHTyuMPpegBD63FUyFx1esK";
+
+  // State management
   const [callStack, setCallStack] = useState<CallStackPausa[]>([]);
-
   const [isAdding, setIsAdding] = useState(false);
-  const [selectedPausaId, setSelectedPausaId] = useState<number | string>("");
-
-  const [pausaDuration, setPausaDuration] = useState("");
-  const [valueTypePause, setValueTypePause] = useState("");
-  const [typePausePutAfterXAgent, setTypePausePutAfterXAgent] =
-    useState<boolean>(false);
-  const [typePause, setTypePause] = useState<TypeOfPause>(null);
-  const [isNextPauseIsAfterAgent, setIsNextPauseIsAfterAgent] =
-    useState<boolean>(false);
+  const [formState, setFormState] = useState({
+    selectedPausaId: "",
+    pausaDuration: "",
+    valueTypePause: "",
+    typePausePutAfterXAgent: false,
+    typePause: null as TypeOfPause,
+    valuePauseTypePausePutAfterXAgent: "",
+  });
+  const [currentPausePutAfterXAgent, setCurrentPausePutAfterXAgent] =
+    useState(false);
 
   const { scheduleTask } = useScheduler();
 
-  function toggleAddPausa() {
-    setIsAdding(!isAdding);
-    if (isAdding) {
-      resetForm();
-    }
-  }
+  // Form handlers
+  const resetForm = useCallback(() => {
+    setFormState({
+      selectedPausaId: "",
+      pausaDuration: "",
+      valueTypePause: "",
+      typePausePutAfterXAgent: false,
+      typePause: null,
+      valuePauseTypePausePutAfterXAgent: "",
+    });
+  }, []);
 
-  function resetForm() {
-    setSelectedPausaId("");
-    setTypePause(null);
-    setTypePausePutAfterXAgent(false);
-    setPausaDuration("");
-  }
+  const toggleAddPausa = useCallback(() => {
+    setIsAdding((prev) => {
+      const newState = !prev;
+      if (prev) resetForm();
+      return newState;
+    });
+  }, [resetForm]);
 
-  function addToCallStack() {
-    if (selectedPausaId === "") return;
+  const handleChangeValue = useCallback((value: string, type: TypeOfPause) => {
+    setFormState((prev) => ({
+      ...prev,
+      valueTypePause: value,
+      typePause: type,
+      typePausePutAfterXAgent: type === "putAfterXAgent",
+    }));
+  }, []);
 
-    const selectedPausa = typePausas.find(
-      (pausa) => pausa.id === String(selectedPausaId)
+  // Core functionality
+  const addToCallStack = useCallback(() => {
+    const {
+      selectedPausaId,
+      pausaDuration,
+      valueTypePause,
+      typePause,
+      valuePauseTypePausePutAfterXAgent,
+    } = formState;
+
+    if (!selectedPausaId) return;
+
+    const selectedPausa = PAUSE_TYPES.find(
+      (pausa) => pausa.id === selectedPausaId
     );
 
     if (selectedPausa) {
       const newPausa: CallStackPausa = {
         id: selectedPausa.id,
         name: selectedPausa.name,
-        type: String(typePause),
+        type: typePause,
         value: valueTypePause,
-        duration: pausaDuration ? Number(pausaDuration) : null,
+        duration: pausaDuration || null,
+        typePausePutAfterXAgent: valuePauseTypePausePutAfterXAgent,
       };
 
       setCallStack((prev) => [...prev, newPausa]);
 
       if (newPausa.type === "time") {
-        scheduleTask(newPausa.value as string, {
+        scheduleTask({
+          targetTime: String(newPausa.value),
           idPause: newPausa.id,
           setState: setCallStack,
           duration: {
             isDuration: false,
-            has: pausaDuration ? true : false,
-            time: pausaDuration ? pausaDuration : null,
+            has: Boolean(pausaDuration),
+            time: pausaDuration || null,
           },
         });
-      }
-      if (newPausa.type === "putAfterXAgent") {
-        if (callStack.length === 0) {
-          setIsNextPauseIsAfterAgent(true);
-        }
       }
 
       resetForm();
       setIsAdding(false);
     }
-  }
+  }, [formState, resetForm, scheduleTask]);
 
-  function removePausa(index: number) {
+  const removePausa = useCallback((index: number) => {
     setCallStack((prev) => prev.filter((_, i) => i !== index));
-  }
+  }, []);
 
-  function handlerChangeValue(value: string, type: TypeOfPause) {
-    setValueTypePause(value);
-    setTypePause(type);
-
-    if (type === "putAfterXAgent") {
-      setTypePausePutAfterXAgent(true);
-    }
-  }
-
-  useEffect(() => {
-    if (callStack[0]?.type === "putAfterXAgent") {
-      setIsNextPauseIsAfterAgent(true);
-    } else {
-      setIsNextPauseIsAfterAgent(false);
-    }
-  }, [callStack]);
-
-  useEffect(() => {
-    if (!isNextPauseIsAfterAgent) return;
-
-    const fetchData = async () => {
+  // API integration
+  const fetchAgentStatus = useCallback(
+    async (agentId: string): Promise<{ motivo_pausa?: string } | null> => {
       try {
-        const res = await fetch(
-          // api para o agente em especifico
-          "https://api-pabx.valenet.com.br:8443/v2/agents",
-          {
-            headers: {
-              "Api-Key": "UVYXcquaKGHTyuMPpegBD63FUyFx1esK",
-            },
-          }
-        );
+        const response = await fetch(`${API_BASE_URL}/agents/${agentId}`, {
+          headers: {
+            "Api-Key": API_KEY,
+          },
+        });
 
-        const data: Root = await res.json();
-        if (!data.paused) {
-          // chamar api para pusar
+        if (!response.ok) {
+          throw new Error(`API returned status: ${response.status}`);
         }
+
+        return await response.json();
       } catch (error) {
-        console.error("Error fetching data:", error);
+        console.error("Error fetching agent data:", error);
+        return null;
+      }
+    },
+    []
+  );
+
+  // Effects
+  useEffect(() => {
+    const currentCallStack = callStack[0];
+    if (!currentCallStack) return;
+
+    let intervalId: NodeJS.Timeout | null = null;
+
+    const handleTimeBasedTask = () => {
+      scheduleTask({
+        targetTime: String(currentCallStack.value),
+        idPause: currentCallStack.id,
+        setState: setCallStack,
+        duration: {
+          isDuration: false,
+          has: Boolean(currentCallStack.duration),
+          time: currentCallStack.duration,
+        },
+      });
+    };
+
+    const handleRemovePausa = () => {
+      if (currentCallStack?.name === "Remover Pausa") {
+        handlerClickPause("1");
       }
     };
 
-    fetchData();
+    const monitorAgentStatus = () => {
+      intervalId = setInterval(async () => {
+        const data = await fetchAgentStatus(String(currentCallStack.value));
+        if (!data) return;
 
-    const intervalId = setInterval(fetchData, 1000);
+        if (data.motivo_pausa === currentCallStack.typePausePutAfterXAgent) {
+          setCurrentPausePutAfterXAgent(true);
+          console.log("data true", data);
+        } else if (
+          data.motivo_pausa !== currentCallStack.typePausePutAfterXAgent &&
+          currentPausePutAfterXAgent
+        ) {
+          console.log("current true");
+          if (currentCallStack.duration) {
+            scheduleTask({
+              targetTime: currentCallStack.duration,
+              idPause: currentCallStack.id,
+              setState: setCallStack,
+              duration: {
+                has: false,
+                isDuration: false,
+                time: currentCallStack.duration,
+              },
+            });
+          } else {
+            handlerClickPause(currentCallStack.id);
+          }
+        }
+      }, 1000);
+    };
+
+    // Determine which handler to use based on pause type
+    if (currentCallStack.type === "time") {
+      handleTimeBasedTask();
+    } else if (currentCallStack.name === "Remover Pausa") {
+      handleRemovePausa();
+    } else if (currentCallStack.type === "putAfterXAgent") {
+      monitorAgentStatus();
+    }
 
     return () => {
-      clearInterval(intervalId);
+      if (intervalId) clearInterval(intervalId);
     };
-  }, [isNextPauseIsAfterAgent]);
+  }, [callStack, currentPausePutAfterXAgent, fetchAgentStatus, scheduleTask]);
 
-  // async function pausarBanheiro(id: string) {
-  //   // setPauseId(id); // Isso é opcional agora, já que vamos passar o id diretamente
-  //   chrome.tabs.query({ url: "https://helpdesk.valenet.local:8443/*" }, function (tabs) {
-  //     tabs.forEach(tab => {
-  //       // Executa a função applyPause em cada aba, passando o id como argumento
-  //       chrome.scripting.executeScript({
-  //         target: { tabId: tab.id as number },
-  //         func: applyPause,
-  //         args: [id] // Passa o id diretamente para a função
-  //       });
-  //     });
-  //   });
-  // }
-
-  // // Função que será injetada, agora aceitando o id como parâmetro
-  // function applyPause(pauseId: string) {
-  //   function clickElement(selector: string): boolean {
-  //     const element = document.querySelector(selector);
-  //     if (element) {
-  //       (element as HTMLElement).click();
-  //       return true;
-  //     }
-  //     return false;
-  //   }
-
-  //   function selectOption(): boolean {
-  //     const selectElement = document.querySelector('.bootbox-input-select');
-  //     if (selectElement) {
-  //       (selectElement as HTMLSelectElement).value = pauseId; // Usa o pauseId passado como argumento
-  //       const event = new Event('change', { bubbles: true });
-  //       selectElement.dispatchEvent(event);
-  //       return true;
-  //     }
-  //     return false;
-  //   }
-
-  //   function confirmPause(): boolean {
-  //     const confirmButton = document.querySelector('button[data-bb-handler="confirm"]');
-  //     if (confirmButton) {
-  //       (confirmButton as HTMLElement).click();
-  //       return true;
-  //     }
-  //     return false;
-  //   }
-
-  //   // Lógica de pausa
-  //   if (clickElement('a[href="#"][onclick*="TogglePausa"]')) {
-  //     setTimeout(() => {
-  //       if (selectOption()) {
-  //         setTimeout(() => {
-  //           confirmPause();
-  //         }, 500);
-  //       }
-  //     }, 500);
-  //   } else {
-  //     console.error('Botão de pausa não encontrado!');
-  //   }
-  // }
-
-  const showAdditionalInfo = selectedPausaId !== "" && selectedPausaId !== 0;
-
+  // Computed values
+  const showAdditionalInfo = Boolean(formState.selectedPausaId);
   const currentTime = new Date().toTimeString().slice(0, 5);
   const disabledButtonAddPause =
-    typePause === "time"
-      ? shouldDisableButton(pausaDuration, valueTypePause)
-      : shouldDisableButton(pausaDuration, currentTime);
+    formState.typePause === "time"
+      ? shouldDisableButton(formState.pausaDuration, formState.valueTypePause)
+      : shouldDisableButton(formState.pausaDuration, currentTime);
 
   return (
     <div className="pausa-manager">
@@ -208,22 +219,31 @@ export function App() {
       <button
         className={`btn ${isAdding ? "btn-cancel" : "btn-add"}`}
         onClick={toggleAddPausa}
+        aria-label={
+          isAdding ? "Cancelar adição de pausa" : "Adicionar nova pausa"
+        }
       >
-        {!isAdding ? "Adicionar Pausa" : "Cancelar"}
+        {isAdding ? "Cancelar" : "Adicionar Pausa"}
       </button>
 
       {isAdding && (
         <div className="form-container">
           <div className="form-row">
             <select
-              value={selectedPausaId}
-              onChange={(e) => setSelectedPausaId(Number(e.target.value))}
+              value={formState.selectedPausaId}
+              onChange={(e) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  selectedPausaId: e.target.value,
+                }))
+              }
               className="form-select"
+              aria-label="Selecione o tipo de pausa"
             >
               <option value="" disabled>
                 Tipo de Pausa
               </option>
-              {typePausas.map((pausa) => (
+              {PAUSE_TYPES.map((pausa) => (
                 <option key={pausa.id} value={pausa.id}>
                   {pausa.name}
                 </option>
@@ -235,49 +255,86 @@ export function App() {
                 <input
                   type="time"
                   className="form-input"
-                  value={typePause === "time" ? valueTypePause : ""}
-                  onChange={(e) => handlerChangeValue(e.target.value, "time")}
+                  value={
+                    formState.typePause === "time"
+                      ? formState.valueTypePause
+                      : ""
+                  }
+                  onChange={(e) => handleChangeValue(e.target.value, "time")}
                   placeholder="Horário"
                   title="Horário da pausa"
+                  aria-label="Horário da pausa"
                 />
 
                 <input
                   type="text"
                   className="form-input"
-                  value={typePause === "putAfterXAgent" ? valueTypePause : ""}
+                  value={
+                    formState.typePause === "putAfterXAgent"
+                      ? formState.valueTypePause
+                      : ""
+                  }
                   onChange={(e) =>
-                    handlerChangeValue(e.target.value, "putAfterXAgent")
+                    handleChangeValue(e.target.value, "putAfterXAgent")
                   }
                   placeholder="Agente"
                   title="Após qual agente"
+                  aria-label="ID do agente para monitorar"
                 />
+
+                {formState.typePause === "putAfterXAgent" && (
+                  <input
+                    type="text"
+                    className="form-input"
+                    value={formState.valuePauseTypePausePutAfterXAgent}
+                    onChange={(e) =>
+                      setFormState((prev) => ({
+                        ...prev,
+                        valuePauseTypePausePutAfterXAgent: e.target.value,
+                      }))
+                    }
+                    placeholder="Qual a pausa"
+                    title="Tipo de pausa a monitorar"
+                    aria-label="Tipo de pausa a monitorar"
+                  />
+                )}
 
                 <hr className="vertical-hr" />
                 <input
                   type="time"
                   className="form-input"
-                  value={pausaDuration}
-                  onChange={(e) => setPausaDuration(e.target.value)}
-                  placeholder="Duração min"
-                  title="Duração da pausa em minutos"
+                  value={formState.pausaDuration}
+                  onChange={(e) =>
+                    setFormState((prev) => ({
+                      ...prev,
+                      pausaDuration: e.target.value,
+                    }))
+                  }
+                  placeholder="Duração"
+                  title="Duração da pausa"
+                  aria-label="Duração da pausa"
                 />
               </>
             )}
 
-            {typePause && (
-              <small>
-                A pausa irá ser adicionada quando
-                {typePause === "time" && `der ${valueTypePause}`}
-                {typePause === "putAfterXAgent" &&
-                  `o ${valueTypePause}, tirar a pausa de ${typePausePutAfterXAgent}`}
-                {" ,"}ou quando voce terminar a ligação
-              </small>
+            {formState.typePause && (
+              <div className="form-help-text">
+                <small>
+                  A pausa irá ser adicionada quando
+                  {formState.typePause === "time" &&
+                    ` der ${formState.valueTypePause}`}
+                  {formState.typePause === "putAfterXAgent" &&
+                    ` o agente ${formState.valueTypePause} tirar a pausa de ${formState.valuePauseTypePausePutAfterXAgent}`}
+                  , ou quando você terminar a ligação
+                </small>
+              </div>
             )}
 
             <button
               className="btn btn-save"
               onClick={addToCallStack}
               disabled={!disabledButtonAddPause}
+              aria-label="Adicionar pausa à fila"
             >
               Adicionar
             </button>
@@ -290,28 +347,48 @@ export function App() {
         {callStack.length === 0 ? (
           <p className="empty-state">Nenhuma pausa configurada</p>
         ) : (
-          <ul className="stack-list">
+          <ul className="stack-list" aria-label="Lista de pausas configuradas">
             {callStack.map((pausa, index) => (
-              <li key={index} className="stack-item">
-                <span className="pausa-name">{pausa.name}</span>
+              <li key={`pause-${pausa.id}-${index}`} className="stack-item">
+                <div className="pausa-header">
+                  <span className="pausa-id">{pausa.id}</span>
+                  <span className="pausa-name">{pausa.name}</span>
+                </div>
+
                 <div className="pausa-details">
                   {pausa.type === "time" && (
-                    <span className="detail">Horário: {pausa.value}</span>
+                    <span className="detail">
+                      <span className="detail-label">Horário:</span>{" "}
+                      {pausa.value}
+                    </span>
                   )}
-                  {pausa.type === "putAfterXTime" && (
-                    <span className="detail">Após: {pausa.value}min</span>
-                  )}
+
                   {pausa.type === "putAfterXAgent" && (
-                    <span className="detail">Agente: {pausa.value}</span>
+                    <span className="detail">
+                      <span className="detail-label">Agente:</span>{" "}
+                      {pausa.value}
+                      {pausa.typePausePutAfterXAgent && (
+                        <span className="sub-detail">
+                          <span className="detail-label">Tipo de pausa:</span>{" "}
+                          {pausa.typePausePutAfterXAgent}
+                        </span>
+                      )}
+                    </span>
                   )}
-                  {pausa.duration! > 0 && (
-                    <span className="detail">Duração: {pausa.duration}min</span>
+
+                  {pausa.duration && (
+                    <span className="detail">
+                      <span className="detail-label">Duração:</span>{" "}
+                      {pausa.duration}
+                    </span>
                   )}
+
                   <button
                     className="btn-remove"
                     onClick={() => removePausa(index)}
+                    aria-label={`Remover pausa ${pausa.name}`}
                   >
-                    ✕
+                    <span aria-hidden="true">✕</span>
                   </button>
                 </div>
               </li>
