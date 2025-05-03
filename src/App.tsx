@@ -15,7 +15,6 @@ export function App() {
   const API_BASE_URL = "https://api-pabx.valenet.com.br:8443/v2";
   const API_KEY = "UVYXcquaKGHTyuMPpegBD63FUyFx1esK";
 
-  // State management
   const [callStack, setCallStack] = useState<CallStackPausa[]>([]);
   const [isAdding, setIsAdding] = useState(false);
   const [formState, setFormState] = useState({
@@ -31,7 +30,6 @@ export function App() {
 
   const { scheduleTask } = useScheduler();
 
-  // Form handlers
   const resetForm = useCallback(() => {
     setFormState({
       selectedPausaId: "",
@@ -60,7 +58,6 @@ export function App() {
     }));
   }, []);
 
-  // Core functionality
   const addToCallStack = useCallback(() => {
     const {
       selectedPausaId,
@@ -110,7 +107,6 @@ export function App() {
     setCallStack((prev) => prev.filter((_, i) => i !== index));
   }, []);
 
-  // API integration
   const fetchAgentStatus = useCallback(
     async (agentId: string): Promise<{ motivo_pausa?: string } | null> => {
       try {
@@ -133,7 +129,6 @@ export function App() {
     []
   );
 
-  // Effects
   useEffect(() => {
     const currentCallStack = callStack[0];
     if (!currentCallStack) return;
@@ -166,12 +161,10 @@ export function App() {
 
         if (data.motivo_pausa === currentCallStack.typePausePutAfterXAgent) {
           setCurrentPausePutAfterXAgent(true);
-          console.log("data true", data);
         } else if (
           data.motivo_pausa !== currentCallStack.typePausePutAfterXAgent &&
           currentPausePutAfterXAgent
         ) {
-          console.log("current true");
           if (currentCallStack.duration) {
             scheduleTask({
               targetTime: currentCallStack.duration,
@@ -190,7 +183,6 @@ export function App() {
       }, 1000);
     };
 
-    // Determine which handler to use based on pause type
     if (currentCallStack.type === "time") {
       handleTimeBasedTask();
     } else if (currentCallStack.name === "Remover Pausa") {
@@ -204,7 +196,6 @@ export function App() {
     };
   }, [callStack, currentPausePutAfterXAgent, fetchAgentStatus, scheduleTask]);
 
-  // Computed values
   const showAdditionalInfo = Boolean(formState.selectedPausaId);
   const currentTime = new Date().toTimeString().slice(0, 5);
   const disabledButtonAddPause =
